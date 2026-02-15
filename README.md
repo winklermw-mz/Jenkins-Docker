@@ -16,8 +16,9 @@ Jenkins will automatically check for changes in the VCS of the main app every 15
 2. Execute unit tests and collect code coverage data
 3. Build and run the container that contains the web service
 4. Execute integration test in the main app
-5. Stop and remove the container that contains the web service
-6. Evaluate and store results
+5. Perform static code analysis
+6. Stop and remove the container that contains the web service
+7. Evaluate and store results
 
 The build is considered unstable if at least one unit or integration test fails or if code coverage fall below 80%. The build fails if one of the above steps cannot be executed properly.
 
