@@ -1,0 +1,92 @@
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        skipStagesAfterUnstable()
+    }
+
+    triggers {
+        pollSCM('H/15 * * * *')
+    }
+
+    stages {
+        stage('Initialize Environment') {
+            steps {
+                ws('/var/jenkins_service_local') {
+                    sh '''#!/bin/bash
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install pytest pytest-cov pylint
+                    mkdir -p jenkins
+                    '''
+                }
+            }
+        }
+
+        stage('Execute Unit Tests') {
+            steps {
+                ws('/var/jenkins_service_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    export PYTHONPATH=${WORKSPACE}
+                    pytest tests/unittest --cov=src --junitxml=jenkins/results.xml --cov-report=xml:jenkins/coverage.xml
+                    '''
+                }
+            }
+        }
+
+        stage('Static Code Analysis') {
+            steps {
+                ws('/var/jenkins_service_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    export PYTHONPATH=${WORKSPACE}
+                    pylint --output-format=json src > jenkins/pylint.json || true
+                    '''
+                }
+            }
+        }
+
+        stage('Trigger Main Pipeline') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                echo "Web service validated sucessfully, starting main pipeline..."
+                build job: 'Calculator', wait: false
+            }
+        }
+    }
+
+    post {
+        always {
+            dir('/var/jenkins_service_local') {
+                junit testResults: 'jenkins/results.xml', allowEmptyResults: true
+                
+                recordIssues(
+                    tool: pyLint(pattern: 'jenkins/pylint.json'),
+                    id: 'pylint-service',
+                    name: 'Service Pylint Analysis',
+                    qualityGates: [
+                        [threshold: 10, type: 'TOTAL', criticality: 'UNSTABLE'],
+                        [threshold: 1, type: 'NEW', criticality: 'UNSTABLE']
+                    ]
+                )
+
+                recordCoverage(
+                    tools: [[parser: 'COBERTURA', pattern: 'jenkins/coverage.xml']],
+                    id: 'coverage',
+                    name: 'Service Code Coverage',
+                    qualityGates: [
+                        [threshold: 80.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE']
+                    ]
+                )
+            }
+        }
+        
+        failure {
+            echo "Pipeline failed, main pipeline has not been triggered"
+        }
+    }
+}
