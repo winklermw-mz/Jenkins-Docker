@@ -2,7 +2,7 @@
 
 ## Container
 
-This package provides a Docker file that sets up a container that runs Jenkins LTS and Python 3.12. This contains already contains the necessary tools to execute unit tests, collect code coverage data and, if necessary, instanciate build and run Docker containers to integrate other web services to also perform integration tests.
+This package provides a Docker file that sets up a container that running Jenkins LTS and Python 3.12. This container already contains the necessary tools to execute unit tests, collect code coverage data and, if necessary, build and run Docker containers to integrate other web services to also perform integration tests.
 
 The configuration of the Jenkins container is located in `jenkins/Dockerfile`. To create the container use the provided script `jenkins/build.sh`. Please note, that `JENKINS_HOME` is mounted as well as the application and the web service to be integrated.
 
@@ -20,7 +20,13 @@ Jenkins will automatically check for changes in the VCS of the main app every 15
 6. Stop and remove the container that contains the web service
 7. Evaluate and store results
 
-The build is considered unstable if at least one unit or integration test fails or if code coverage fall below 80%. The build fails if one of the above steps cannot be executed properly.
+The build is considered unstable one of the following conditions holds:
+
+- at least one unit or integration test fails
+- code coverage fall below 80%
+- if there are 10 or more issues found in static code analysis in total or if the total number has increased since the last build.
+
+The build fails if one of the above steps cannot be executed properly.
 
 ## Example
 
