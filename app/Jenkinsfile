@@ -19,7 +19,7 @@ pipeline {
                 sh '''#!/bin/bash
                 python3 -m venv venv
                 . venv/bin/activate
-                pip install pytest pytest-cov requests 
+                pip install pytest pytest-cov requests pylint
                 mkdir -p jenkins
                 '''
             }
@@ -65,6 +65,16 @@ pipeline {
                 '''
             }
         }
+
+        stage('Run Static Code Analysis') {
+            steps {
+                sh '''#!/bin/bash
+                . venv/bin/activate
+                export PYTHONPATH=${WORKSPACE}
+                pylint --output-format=json src > jenkins/pylint.json || true
+                '''
+            }
+        }
     }
     
     post {
@@ -72,6 +82,16 @@ pipeline {
             // properly shut down docker container for web service
             sh 'docker stop my-webservice && docker rm my-webservice || true'
 
+            recordIssues(
+                tool: pyLint(pattern: 'jenkins/pylint.json'),
+                id: 'pylint',
+                name: 'Pylint Analysis',
+                qualityGates: [
+                    [threshold: 10, type: 'TOTAL', criticality: 'UNSTABLE'],
+                    [threshold: 1, type: 'NEW', criticality: 'UNSTABLE']
+                ]
+            )
+            
             junit (
                 testResults: 'jenkins/*-results.xml',
                 allowEmptyResults: true,
