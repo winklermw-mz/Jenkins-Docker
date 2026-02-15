@@ -16,78 +16,90 @@ pipeline {
         stage('Initialize Environment') {
             // create test environment
             steps {
-                sh '''#!/bin/bash
-                python3 -m venv venv
-                . venv/bin/activate
-                pip install pytest pytest-cov requests pylint coverage
-                mkdir -p jenkins
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install pytest pytest-cov requests pylint coverage
+                    mkdir -p jenkins
+                    '''
+                }
             }
         }
 
         stage('Unit Tests') {
             // execute unit tests and collect code coverage data
             steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                export COVERAGE_FILE=jenkins/.coverage.unit
-                pytest tests/unittest --cov=src --junitxml=jenkins/unittest-results.xml
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    export PYTHONPATH=${WORKSPACE}
+                    export COVERAGE_FILE=jenkins/.coverage.unit
+                    pytest tests/unittest --cov=src --junitxml=jenkins/unittest-results.xml
+                    '''
+                }
             }
         }
 
         stage('Setup Service Container') {
             // build and start docker container for web service
             steps {
-                sh '''#!/bin/bash
-                CONTAINER_NAME="my-webservice"
-                docker rm -f $CONTAINER_NAME || true
-                docker build -t my-webservice-image /var/jenkins_service_local
-                docker run -d --name $CONTAINER_NAME -p 5001:5000 my-webservice-image
-                
-                echo "Waiting for web service on host.docker.internal:5001..."
-                if ! timeout 20s bash -c "until curl -s http://host.docker.internal:5001/health; do sleep 1; done"; then
-                    echo "--- ERROR: Web service did not respond within 20 seconds ---"
-                    docker logs $CONTAINER_NAME
-                    exit 1
-                fi
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    CONTAINER_NAME="my-webservice"
+                    docker rm -f $CONTAINER_NAME || true
+                    docker build -t my-webservice-image /var/jenkins_service_local
+                    docker run -d --name $CONTAINER_NAME -p 5001:5000 -e PYTHONPATH=/app my-webservice-image
+                    
+                    echo "Waiting for web service on host.docker.internal:5001..."
+                    if ! timeout 20s bash -c "until curl -s http://host.docker.internal:5001/health; do sleep 1; done"; then
+                        echo "--- ERROR: Web service did not respond within 20 seconds ---"
+                        docker logs $CONTAINER_NAME
+                        exit 1
+                    fi
+                    '''
+                }
             }
         }
 
         stage('Integration Tests') {
             // execute integration tests and collect code coverage data
             steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                export COVERAGE_FILE=jenkins/.coverage.int
-                pytest tests/integration --cov=src --junitxml=jenkins/integration-results.xml
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    export PYTHONPATH=${WORKSPACE}
+                    export COVERAGE_FILE=jenkins/.coverage.int
+                    pytest tests/integration --cov=src --junitxml=jenkins/integration-results.xml
+                    '''
+                }
             }
         }
 
         stage('Combine Coverage') {
             // combine code coverage data from unit and integration tests
             steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                cd jenkins
-                coverage combine .coverage.unit .coverage.int
-                coverage xml -i
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    cd jenkins
+                    coverage combine .coverage.unit .coverage.int
+                    coverage xml -i
+                    '''
+                }
             }
         }
 
         stage('Run Static Code Analysis') {
             // perform static code analysis using PyLint
             steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                pylint --output-format=json src > jenkins/pylint.json || true
-                '''
+                ws('/var/jenkins_workspace_local') {
+                    sh '''#!/bin/bash
+                    . venv/bin/activate
+                    export PYTHONPATH=${WORKSPACE}
+                    pylint --output-format=json src > jenkins/pylint.json || true
+                    '''
+                }
             }
         }
     }
