@@ -8,7 +8,9 @@ The configuration of the Jenkins container is located in `jenkins/Dockerfile`. T
 
 ## Configuration
 
-The configuration file stored in `app/Jenkinsfile` can be used to setup a new pipeline job. Jenkins will check for changes in the VCS of the main app every 15 minutes. If there are changes, the following steps will be executed:
+The configuration file stored in `app/Jenkinsfile` can be used to setup a new pipeline job. To do this, click in "new item" on the top left corner, then select "pipeline" and choose type "pipeline script from SCM".
+
+Jenkins will automatically check for changes in the VCS of the main app every 15 minutes. If there are changes, the following steps will be executed:
 
 1. Setup the Python environment for the main app
 2. Execute unit tests and collect code coverage data
