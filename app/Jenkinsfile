@@ -19,7 +19,7 @@ pipeline {
                 sh '''#!/bin/bash
                 python3 -m venv venv
                 . venv/bin/activate
-                pip install pytest pytest-cov requests pylint
+                pip install pytest pytest-cov requests pylint coverage
                 mkdir -p jenkins
                 '''
             }
@@ -31,13 +31,14 @@ pipeline {
                 sh '''#!/bin/bash
                 . venv/bin/activate
                 export PYTHONPATH=${WORKSPACE}
-                pytest tests/unittest --cov=src --cov-report=xml:jenkins/coverage.xml --junitxml=jenkins/unittest-results.xml
+                export COVERAGE_FILE=jenkins/.coverage.unit
+                pytest tests/unittest --cov=src --junitxml=jenkins/unittest-results.xml
                 '''
             }
         }
 
         stage('Setup Service Container') {
-            // setup and start docker container for web service
+            // build and start docker container for web service
             steps {
                 sh '''#!/bin/bash
                 CONTAINER_NAME="my-webservice"
@@ -56,17 +57,31 @@ pipeline {
         }
 
         stage('Integration Tests') {
-            // execute integration tests
+            // execute integration tests and collect code coverage data
             steps {
                 sh '''#!/bin/bash
                 . venv/bin/activate
                 export PYTHONPATH=${WORKSPACE}
-                pytest tests/integration --junitxml=jenkins/integration-results.xml
+                export COVERAGE_FILE=jenkins/.coverage.int
+                pytest tests/integration --cov=src --junitxml=jenkins/integration-results.xml
+                '''
+            }
+        }
+
+        stage('Combine Coverage') {
+            // combine code coverage data from unit and integration tests
+            steps {
+                sh '''#!/bin/bash
+                . venv/bin/activate
+                cd jenkins
+                coverage combine .coverage.unit .coverage.int
+                coverage xml -i
                 '''
             }
         }
 
         stage('Run Static Code Analysis') {
+            // perform static code analysis using PyLint
             steps {
                 sh '''#!/bin/bash
                 . venv/bin/activate
@@ -82,29 +97,29 @@ pipeline {
             // properly shut down docker container for web service
             sh 'docker stop my-webservice && docker rm my-webservice || true'
 
+            // results from unit and integration tests
+            junit (
+                testResults: 'jenkins/*-results.xml',
+                allowEmptyResults: true
+            )
+            
+            // static code analysis, mark build as unstable if there are more than 10 issues
+            // or if there is at least one issue more than in the last build
             recordIssues(
                 tool: pyLint(pattern: 'jenkins/pylint.json'),
                 id: 'pylint',
                 name: 'Pylint Analysis',
-                // mark build as unstable if there are more than 10 issues
-                // or if there is at least one issue more than in the last build
                 qualityGates: [
                     [threshold: 10, type: 'TOTAL', criticality: 'UNSTABLE'],
                     [threshold: 1, type: 'NEW', criticality: 'UNSTABLE']
                 ]
             )
             
-            junit (
-                testResults: 'jenkins/*-results.xml',
-                allowEmptyResults: true,
-                healthScaleFactor: 1.0
-            )
-            
+            // code coverage, mark build as instable if code coverage below 80%
             recordCoverage(
                 tools: [[parser: 'COBERTURA', pattern: 'jenkins/coverage.xml']],
                 id: 'python-coverage',
-                name: 'Python Code Coverage',
-                // mark build as instable if code coverage below 80%
+                name: 'Combined Code Coverage',
                 qualityGates: [
                     [threshold: 80.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE']
                 ]
