@@ -1,5 +1,5 @@
-import math
 from flask import Flask, jsonify
+from src.square_root import SquareRoot
 
 app = Flask(__name__)
 
@@ -10,15 +10,11 @@ def health():
 @app.route('/sqrt/<value>', methods=['GET'])
 def sqrt(value):
     try:
-        value = float(value)
-    except ValueError:
-        return jsonify({"result": None, "error": "Invalid number"}), 400
-
-    if value < 0:
-        return jsonify({"result": None, "error": "Negative numbers are not allowed"}), 400
-    
-    result = math.sqrt(value)
-    return jsonify({"result": result}), 200
+        sq = SquareRoot()
+        result = sq.run(value)
+        return jsonify({"result": result}), 200
+    except Exception as e:
+        return jsonify({"result": None, "error": str(e)}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
