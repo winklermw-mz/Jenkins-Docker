@@ -1,129 +1,29 @@
-pipeline {
-    agent any
+# Using Jenkins for CI/CD
 
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        // don't skip instable builds, i.e. if code coverage falls below 80% or at least one unit test fails
-        skipStagesAfterUnstable()
-    }
+## Container
 
-    triggers {
-        // check for changes every 15 minutes
-        pollSCM('H/15 * * * *')
-    }
+This package provides a Docker file that sets up a container that runs Jenkins LTS and Python 3.12. This contains already contains the necessary tools to execute unit tests, collect code coverage data and, if necessary, instanciate build and run Docker containers to integrate other web services to also perform integration tests.
 
-    stages {
-        stage('Initialize Environment') {
-            // create test environment
-            steps {
-                sh '''#!/bin/bash
-                python3 -m venv venv
-                . venv/bin/activate
-                pip install pytest pytest-cov requests pylint coverage
-                mkdir -p jenkins
-                '''
-            }
-        }
+The configuration of the Jenkins container is located in `jenkins/Dockerfile`. To create the container use the provided script `jenkins/build.sh`. Please note, that `JENKINS_HOME` is mounted as well as the application and the web service to be integrated.
 
-        stage('Unit Tests') {
-            // execute unit tests and collect code coverage data
-            steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                export COVERAGE_FILE=jenkins/.coverage.unit
-                pytest tests/unittest --cov=src --junitxml=jenkins/unittest-results.xml
-                '''
-            }
-        }
+## Configuration
 
-        stage('Setup Service Container') {
-            // build and start docker container for web service
-            steps {
-                sh '''#!/bin/bash
-                CONTAINER_NAME="my-webservice"
-                docker rm -f $CONTAINER_NAME || true
-                docker build -t my-webservice-image /var/jenkins_service_local
-                docker run -d --name $CONTAINER_NAME -p 5001:5000 my-webservice-image
-                
-                echo "Waiting for web service on host.docker.internal:5001..."
-                if ! timeout 20s bash -c "until curl -s http://host.docker.internal:5001/health; do sleep 1; done"; then
-                    echo "--- ERROR: Web service did not respond within 20 seconds ---"
-                    docker logs $CONTAINER_NAME
-                    exit 1
-                fi
-                '''
-            }
-        }
+The configuration file stored in `app/Jenkinsfile` can be used to setup a new pipeline job. To do this, click in "new item" on the top left corner, then select "pipeline" and choose type "pipeline script from SCM".
 
-        stage('Integration Tests') {
-            // execute integration tests and collect code coverage data
-            steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                export COVERAGE_FILE=jenkins/.coverage.int
-                pytest tests/integration --cov=src --junitxml=jenkins/integration-results.xml
-                '''
-            }
-        }
+Jenkins will automatically check for changes in the VCS of the main app every 15 minutes. If there are changes, the following steps will be executed:
 
-        stage('Combine Coverage') {
-            // combine code coverage data from unit and integration tests
-            steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                cd jenkins
-                coverage combine .coverage.unit .coverage.int
-                coverage xml -i
-                '''
-            }
-        }
+1. Setup the Python environment for the main app
+2. Execute unit tests and collect code coverage data
+3. Build and run the container that contains the web service
+4. Execute integration test in the main app and collect code coverage data
+5. Combine code coverage data from unit and integration tests
+6. Stop and remove the container that contains the web service
+7. Evaluate and store results
 
-        stage('Run Static Code Analysis') {
-            // perform static code analysis using PyLint
-            steps {
-                sh '''#!/bin/bash
-                . venv/bin/activate
-                export PYTHONPATH=${WORKSPACE}
-                pylint --output-format=json src > jenkins/pylint.json || true
-                '''
-            }
-        }
-    }
-    
-    post {
-        always {
-            // properly shut down docker container for web service
-            sh 'docker stop my-webservice && docker rm my-webservice || true'
+The build is considered unstable if at least one unit or integration test fails or if code coverage fall below 80%. The build fails if one of the above steps cannot be executed properly.
 
-            // results from unit and integration tests
-            junit (
-                testResults: 'jenkins/*-results.xml',
-                allowEmptyResults: true
-            )
-            
-            // static code analysis, mark build as unstable if there are more than 10 issues
-            // or if there is at least one issue more than in the last build
-            recordIssues(
-                tool: pyLint(pattern: 'jenkins/pylint.json'),
-                id: 'pylint',
-                name: 'Pylint Analysis',
-                qualityGates: [
-                    [threshold: 10, type: 'TOTAL', criticality: 'UNSTABLE'],
-                    [threshold: 1, type: 'NEW', criticality: 'UNSTABLE']
-                ]
-            )
-            
-            // code coverage, mark build as instable if code coverage below 80%
-            recordCoverage(
-                tools: [[parser: 'COBERTURA', pattern: 'jenkins/coverage.xml']],
-                id: 'python-coverage',
-                name: 'Combined Code Coverage',
-                qualityGates: [
-                    [threshold: 80.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE']
-                ]
-            )
-        }
-    }
-}
+## Example
+
+In this example the main app contains a calculator class (`app/src/calculator.py`) that provides some arithmetic functions such as addition or subtraction. This functionality is covered by the unit test in `app/tests/unittest/test_calculator.py`.
+
+Additionally, there is a web service `service/app.py` that also provides a route to calculate the square root of a given non-negative number. This functionality is used in the main app and evaluated in `app/tests/integration/test_webservice.py`.
