@@ -1,0 +1,92 @@
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        // don't skip instable builds, i.e. if code coverage falls below 80% or at least one unit test fails
+        skipStagesAfterUnstable()
+    }
+
+    triggers {
+        // check for changes every 15 minutes
+        pollSCM('H/15 * * * *')
+    }
+
+    stages {
+        stage('Initialize Environment') {
+            // create test environment
+            steps {
+                sh '''#!/bin/bash
+                python3 -m venv venv
+                . venv/bin/activate
+                pip install pytest pytest-cov requests 
+                mkdir -p jenkins
+                '''
+            }
+        }
+
+        stage('Unit Tests') {
+            // execute unit tests and collect code coverage data
+            steps {
+                sh '''#!/bin/bash
+                . venv/bin/activate
+                export PYTHONPATH=${WORKSPACE}
+                pytest tests/unittest --cov=src --cov-report=xml:jenkins/coverage.xml --junitxml=jenkins/unittest-results.xml
+                '''
+            }
+        }
+
+        stage('Setup Service Container') {
+            // setup and start docker container for web service
+            steps {
+                sh '''#!/bin/bash
+                CONTAINER_NAME="my-webservice"
+                docker rm -f $CONTAINER_NAME || true
+                docker build -t my-webservice-image /var/jenkins_service_local
+                docker run -d --name $CONTAINER_NAME -p 5001:5000 my-webservice-image
+                
+                echo "Waiting for web service on host.docker.internal:5001..."
+                if ! timeout 20s bash -c "until curl -s http://host.docker.internal:5001/health; do sleep 1; done"; then
+                    echo "--- ERROR: Web service did not respond within 20 seconds ---"
+                    docker logs $CONTAINER_NAME
+                    exit 1
+                fi
+                '''
+            }
+        }
+
+        stage('Integration Tests') {
+            // execute integration tests
+            steps {
+                sh '''#!/bin/bash
+                . venv/bin/activate
+                export PYTHONPATH=${WORKSPACE}
+                pytest tests/integration --junitxml=jenkins/integration-results.xml
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            // properly shut down docker container for web service
+            sh 'docker stop my-webservice && docker rm my-webservice || true'
+
+            junit (
+                testResults: 'jenkins/*-results.xml',
+                allowEmptyResults: true,
+                healthScaleFactor: 1.0
+            )
+            
+            recordCoverage(
+                tools: [[parser: 'COBERTURA', pattern: 'jenkins/coverage.xml']],
+                id: 'python-coverage',
+                name: 'Python Code Coverage',
+                // mark build as instable if code coverage below 80%
+                qualityGates: [
+                    [threshold: 80.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE']
+                ]
+            )
+        }
+    }
+}
