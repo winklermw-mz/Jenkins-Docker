@@ -86,6 +86,8 @@ pipeline {
                 tool: pyLint(pattern: 'jenkins/pylint.json'),
                 id: 'pylint',
                 name: 'Pylint Analysis',
+                // mark build as unstable if there are more than 10 issues
+                // or if there is at least one issue more than in the last build
                 qualityGates: [
                     [threshold: 10, type: 'TOTAL', criticality: 'UNSTABLE'],
                     [threshold: 1, type: 'NEW', criticality: 'UNSTABLE']
