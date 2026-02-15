@@ -23,8 +23,8 @@ Jenkins will automatically check for changes in the VCS of the main app every 15
 The build is considered unstable one of the following conditions holds:
 
 - at least one unit or integration test fails
-- code coverage fall below 80%
-- if there are 10 or more issues found in static code analysis in total or if the total number has increased since the last build.
+- code coverage is below 80%
+- there are 10 or more issues found in static code analysis in total or if the total number has increased since the last build
 
 The build fails if one of the above steps cannot be executed properly.
 
