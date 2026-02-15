@@ -30,6 +30,12 @@ The build fails if one of the above steps cannot be executed properly.
 
 ## Example
 
+### Main Pipeline
+
 In this example the main app contains a calculator class (`app/src/calculator.py`) that provides some arithmetic functions such as addition or subtraction. This functionality is covered by the unit test in `app/tests/unittest/test_calculator.py`.
 
-Additionally, there is a web service `service/app.py` that also provides a route to calculate the square root of a given non-negative number. This functionality is used in the main app and evaluated in `app/tests/integration/test_webservice.py`.
+Additionally, there is a web service `service/app.py` (running on `http://localhost:5001`) that also provides a route to calculate the square root of a given non-negative number. This functionality is used in the main app. The integration is evaluated in `app/tests/integration/test_webservice.py`.
+
+### Pipeline for Web Service
+
+There is another pipeline for the web service itself. It is also triggered by VCS changes. The pipeline executes the unit tests in `service/tests/unittest/test_square_root.py`, collects code coverage data and perform static code analysis. If this pipeline has been executed successfully the main pipeline is triggered automatically.
